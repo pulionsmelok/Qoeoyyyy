@@ -487,12 +487,31 @@ function createBaileysClient(config, callback) {
         socket.ev.on("messages.reaction", reactions => {
             if (!globalOptions.listenEvents) return;
 
+            // Baileys gives us two keys here:
+            //   msgKey     = the reaction event/message (who reacted)
+            //   reaction.key = the original message that was reacted to
+            // The previous code treated these in reverse, so the bot was
+            // checking the bot's own JID as the reactor and trying to delete
+            // the reaction event instead of the original message.
             for (const { key: msgKey, reaction } of reactions) {
-                const threadID = normalizeJID(msgKey.remoteJid);
-                const senderID = normalizeJID(reaction.key?.fromMe ? ctx.selfID : reaction.key?.participant);
-                
+                const targetKey = reaction?.key || {};
+                const threadID = normalizeJID(targetKey.remoteJid || msgKey.remoteJid);
+                const senderID = normalizeJID(
+                    msgKey.fromMe ? ctx.selfID : (msgKey.participant || msgKey.remoteJid)
+                );
+
                 eventCallback(null, {
-                    type: "message_reaction", threadID: threadID, senderID: senderID, author: senderID, messageID: reaction.key?.id || msgKey.id, isGroup: isGroupJID(msgKey.remoteJid), fromMe: !!reaction.key?.fromMe, emoji: reaction.text || "", removed: !reaction.text, reactionKey: msgKey
+                    type: "message_reaction",
+                    threadID: threadID,
+                    senderID: senderID,
+                    author: senderID,
+                    messageID: targetKey.id || msgKey.id,
+                    isGroup: isGroupJID(threadID),
+                    fromMe: !!msgKey.fromMe,
+                    emoji: reaction?.text || "",
+                    removed: !reaction?.text,
+                    reactionKey: targetKey,
+                    reactorKey: msgKey
                 });
             }
         });
