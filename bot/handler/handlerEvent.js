@@ -139,7 +139,7 @@ async function runRegisteredEvents(api, event) {
     }
 }
 
-async function handleReaction(api, event) {
+async function handleReaction(api, event, preAllowed = null) {
     const key = event.reactionKey?.id;
     if (!key) return;
     const data = global.GoatBot.onReaction.get(key);
@@ -147,7 +147,9 @@ async function handleReaction(api, event) {
     const cmd = commandLookup(data.commandName);
     if (!cmd || typeof cmd.onReaction !== "function") return;
 
-    const allowed = await handlerAction(api, event).catch(() => false);
+    const allowed = preAllowed === null
+        ? await handlerAction(api, event).catch(() => false)
+        : preAllowed;
     if (!allowed) return;
 
     const role = await getUserRole(event).catch(() => 0);
@@ -263,7 +265,17 @@ async function handlerEvent(api, event) {
     }
 
     if (event.type === "message_reaction") {
-        await handleReaction(api, event);
+        // Run the global reaction gate first. This is important because
+        // unsendBotReact is handled inside handlerAction(), while
+        // handleReaction() only looks for command-specific reaction hooks.
+        // Without this call, reacting to a normal bot message never reaches
+        // the global unsend logic.
+        const allowed = await handlerAction(api, event).catch(() => false);
+        if (!allowed) return;
+
+        // Pass the already-checked permission result so handlerAction() is
+        // not executed twice for the same reaction event.
+        await handleReaction(api, event, allowed);
         return;
     }
 
