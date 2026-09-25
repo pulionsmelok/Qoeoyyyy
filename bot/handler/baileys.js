@@ -502,17 +502,14 @@ function createBaileysClient(config, callback) {
         socket.ev.on("messages.reaction", reactions => {
             if (!globalOptions.listenEvents) return;
 
-            // Baileys gives us two keys here:
-            //   msgKey     = the reaction event/message (who reacted)
-            //   reaction.key = the original message that was reacted to
-            // The previous code treated these in reverse, so the bot was
-            // checking the bot's own JID as the reactor and trying to delete
-            // the reaction event instead of the original message.
-            for (const { key: msgKey, reaction } of reactions) {
-                const targetKey = reaction?.key || {};
-                const threadID = normalizeJID(targetKey.remoteJid || msgKey.remoteJid);
+            // Baileys v7 emits { key: TARGET_MESSAGE_KEY, reaction }, while
+            // reaction.key identifies the reaction message / reactor.
+            // The target key is the message that must be deleted.
+            for (const { key: targetKey, reaction } of reactions) {
+                const reactorKey = reaction?.key || {};
+                const threadID = normalizeJID(targetKey?.remoteJid || reactorKey?.remoteJid);
                 const senderID = normalizeJID(
-                    msgKey.fromMe ? ctx.selfID : (msgKey.participant || msgKey.remoteJid)
+                    reactorKey?.fromMe ? ctx.selfID : (reactorKey?.participant || reactorKey?.remoteJid)
                 );
 
                 eventCallback(null, {
@@ -520,13 +517,13 @@ function createBaileysClient(config, callback) {
                     threadID: threadID,
                     senderID: senderID,
                     author: senderID,
-                    messageID: targetKey.id || msgKey.id,
+                    messageID: targetKey?.id || reactorKey?.id,
                     isGroup: isGroupJID(threadID),
-                    fromMe: !!msgKey.fromMe,
+                    fromMe: !!targetKey?.fromMe,
                     emoji: reaction?.text || "",
                     removed: !reaction?.text,
                     reactionKey: targetKey,
-                    reactorKey: msgKey
+                    reactorKey: reactorKey
                 });
             }
         });

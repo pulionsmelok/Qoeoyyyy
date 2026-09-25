@@ -100,8 +100,8 @@ async function handlerAction(api, event) {
             const reactionSender =
                 event.senderID ||
                 event.author ||
-                event.reactionKey?.participant ||
-                event.reactionKey?.remoteJid ||
+                event.reactorKey?.participant ||
+                event.reactorKey?.remoteJid ||
                 "";
             const reactionIsFromAdmin = isAdminUID(reactionSender, adminList);
 
