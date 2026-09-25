@@ -91,23 +91,42 @@ async function handlerAction(api, event) {
     const isAdmin = isAdminUID(senderID, adminList);
 
     if (event.type === "message_reaction") {
-        if (featureBox.unsendBotReact) {
-            const unsendEmoji = featureBox.unsendBotReactEmoji || "❌";
+        if (featureBox.unsendBotReact && !event.removed) {
+            const unsendEmoji = String(featureBox.unsendBotReactEmoji || "❌").trim();
+
+            // In groups Baileys normally provides reaction.key.participant.
+            // In private chats participant can be missing, so fall back to
+            // reaction.key.remoteJid (the person who reacted).
+            const reactionSender =
+                event.senderID ||
+                event.author ||
+                event.reactionKey?.participant ||
+                event.reactionKey?.remoteJid ||
+                "";
+            const reactionIsFromAdmin = isAdminUID(reactionSender, adminList);
+
             if (
-                (event.emoji || "").trim() === String(unsendEmoji).trim() &&
-                isAdmin &&
-                event.reactionKey
+                String(event.emoji || "").trim() === unsendEmoji &&
+                reactionIsFromAdmin &&
+                event.reactionKey?.id
             ) {
                 try {
+                    // reactionKey is the key of the message that received the
+                    // reaction. Pass the complete key so Baileys can delete
+                    // the original bot message correctly.
                     await api.deleteMessage(threadID, {
-                        remoteJid: threadID,
+                        remoteJid: event.reactionKey.remoteJid || threadID,
                         id: event.reactionKey.id,
-                        fromMe: true
-                    }, true);
+                        fromMe: true,
+                        participant: event.reactionKey.participant
+                    });
+                    try {
+                        global.log.info("UNSEND", `Deleted bot message by ${unsendEmoji} reaction: ${event.reactionKey.id}`);
+                    } catch (_) {}
                 } catch (err) {
                     try {
-                        global.log.warn("UNSEND", "React delete failed: " + err.message);
-                    } catch (e) {}
+                        global.log.warn("UNSEND", "React delete failed: " + (err?.message || err));
+                    } catch (_) {}
                 }
                 return false;
             }

@@ -314,6 +314,10 @@ async function handlerEvent(api, event) {
         commandArgs = rawArgs.slice(1);
     } else {
         const noPrefixCmd = commandLookup(first.toLowerCase());
+
+        // usePrefix:true  => prefix is mandatory (e.g. .uid /uid, depending
+        // on config.prefix; plain "uid" must NOT run).
+        // usePrefix:false => both prefixed and plain invocation are allowed.
         if (noPrefixCmd?.config?.usePrefix === false) {
             commandName = first.toLowerCase();
             commandArgs = rawArgs.slice(1);
