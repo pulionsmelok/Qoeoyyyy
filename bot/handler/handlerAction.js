@@ -108,7 +108,11 @@ async function handlerAction(api, event) {
             if (
                 String(event.emoji || "").trim() === unsendEmoji &&
                 reactionIsFromAdmin &&
-                event.reactionKey?.id
+                event.reactionKey?.id &&
+                // Only delete messages that were sent by this bot.
+                // This prevents a 👍 reaction on someone else's message
+                // from being treated as an unsend request.
+                event.reactionKey?.fromMe === true
             ) {
                 try {
                     // reactionKey is the key of the message that received the
