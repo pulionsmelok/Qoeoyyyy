@@ -487,31 +487,44 @@ function createBaileysClient(config, callback) {
         socket.ev.on("messages.reaction", reactions => {
             if (!globalOptions.listenEvents) return;
 
-            // Baileys gives us two keys here:
-            //   msgKey     = the reaction event/message (who reacted)
-            //   reaction.key = the original message that was reacted to
-            // The previous code treated these in reverse, so the bot was
-            // checking the bot's own JID as the reactor and trying to delete
-            // the reaction event instead of the original message.
-            for (const { key: msgKey, reaction } of reactions) {
-                const targetKey = reaction?.key || {};
-                const threadID = normalizeJID(targetKey.remoteJid || msgKey.remoteJid);
-                const senderID = normalizeJID(
-                    msgKey.fromMe ? ctx.selfID : (msgKey.participant || msgKey.remoteJid)
+            // Baileys emits: { key: TARGET_MESSAGE_KEY, reaction } and
+            // reaction.key is the key of the actual reaction message (the
+            // person who reacted). See Baileys process-message.ts.
+            // Therefore: targetKey = key, reactorKey = reaction.key.
+            for (const item of reactions || []) {
+                const targetKey = item?.key || {};
+                const reaction = item?.reaction || {};
+                const reactorKey = reaction?.key || {};
+
+                const threadID = normalizeJID(
+                    targetKey.remoteJid || reactorKey.remoteJid || ""
                 );
+
+                // For a group reaction, participant is the reactor. In a
+                // private chat, remoteJid is the reactor. If WhatsApp marks
+                // the event as fromMe, the reactor is the bot's own account.
+                const reactorJID = reactorKey.fromMe
+                    ? ctx.selfID
+                    : (reactorKey.participant || reactorKey.remoteJid || "");
+                const senderID = normalizeJID(reactorJID);
+
+                if (!threadID || !targetKey.id || !senderID) continue;
 
                 eventCallback(null, {
                     type: "message_reaction",
-                    threadID: threadID,
-                    senderID: senderID,
+                    threadID,
+                    senderID,
                     author: senderID,
-                    messageID: targetKey.id || msgKey.id,
+                    messageID: targetKey.id,
                     isGroup: isGroupJID(threadID),
-                    fromMe: !!msgKey.fromMe,
+                    // This is whether the REACTOR is the bot, not whether the
+                    // target message belongs to the bot. The latter is in
+                    // reactionKey.fromMe and is checked before unsending.
+                    fromMe: !!reactorKey.fromMe,
                     emoji: reaction?.text || "",
                     removed: !reaction?.text,
                     reactionKey: targetKey,
-                    reactorKey: msgKey
+                    reactorKey
                 });
             }
         });
