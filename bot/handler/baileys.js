@@ -900,9 +900,13 @@ function createBaileysClient(config, callback) {
                 return await socket.sendMessage(normalizeJID(jid), { text: caption || "", edit: { remoteJid: normalizeJID(jid), id: String(messageID), fromMe: true } });
             },
             unsendMessage: async (messageID, jid) => {
-                const target = jid || ctx.currentEvent?.threadID || clientInstance._currentEvent?.threadID;
+                const target = jid || ctx.currentEvent?.threadID;
                 if (!target) throw new Error("Missing chat ID for unsendMessage");
-                return await clientInstance.deleteMessage(target, { remoteJid: target, id: String(messageID), fromMe: true });
+                const remoteJid = normalizeJID(target);
+                if (!remoteJid) throw new Error("Invalid chat ID for unsendMessage");
+                return await socket.sendMessage(remoteJid, {
+                    delete: { remoteJid, id: String(messageID), fromMe: true }
+                });
             },
             pinMessage: async (jid, messageID, duration = 24 * 60 * 60) => {
                 return await socket.sendMessage(normalizeJID(jid), { pin: { key: { remoteJid: normalizeJID(jid), id: messageID, fromMe: true }, type: 1, duration: duration } });
