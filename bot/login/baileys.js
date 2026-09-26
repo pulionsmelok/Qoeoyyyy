@@ -172,6 +172,8 @@ function parseMessage(message, selfID, options) {
     };
 }
 
+let clientInstance = null;
+
 function createBaileysClient(config, callback) {
     config = config || {};
     const authFolder = config.authFolder || "./auth";
@@ -295,7 +297,6 @@ function createBaileysClient(config, callback) {
         sock.ev.on("creds.update", saveCreds);
 
         let pairingRequested = false;
-        let clientInstance = null;
         let eventHandler = null;
 
         const cleanPhone = phoneNumber ? String(phoneNumber).replace(/[^0-9]/g, "") : null;
@@ -355,6 +356,7 @@ function createBaileysClient(config, callback) {
                 clientState.selfID = sock.user?.id || "";
                 if (!clientInstance) {
                     clientInstance = createClient(sock, clientState);
+                    global.clientInstance = clientInstance;
                     callback(null, clientInstance);
                 } else {
                     if (eventHandler) {
