@@ -173,7 +173,10 @@ function buildMessage(api, event) {
   return {
     async reply(msgOrObj, cb) {
       const content = normalizeContent(msgOrObj);
-      const replyTarget = event.messageReply?.raw || event.replyToMessage?.raw || rawMsg;
+      // message.reply() should quote the message that triggered the command,
+      // not the message that the user may have quoted. The Baileys adapter
+      // converts replyToMessage into the native `quoted` option.
+      const replyTarget = rawMsg;
       const opts = replyTarget ? { replyToMessage: replyTarget } : {};
       const sent = await api.sendMessage(content, threadID, opts).catch((e) => { if (cb) cb(e, null); throw e; });
 
