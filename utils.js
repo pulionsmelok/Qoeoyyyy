@@ -173,7 +173,8 @@ function buildMessage(api, event) {
   return {
     async reply(msgOrObj, cb) {
       const content = normalizeContent(msgOrObj);
-      const opts = rawMsg ? { replyToMessage: rawMsg } : {};
+      const replyTarget = event.messageReply?.raw || event.replyToMessage?.raw || rawMsg;
+      const opts = replyTarget ? { replyToMessage: replyTarget } : {};
       const sent = await api.sendMessage(content, threadID, opts).catch((e) => { if (cb) cb(e, null); throw e; });
 
       const info = {
