@@ -584,12 +584,23 @@ function createBaileysClient(config, callback) {
         return /@(s\.whatsapp\.net|g\.us|broadcast)$/.test(value) || /^\d{7,}$/.test(value);
     }
 
-    function sanitizeSendOptions(options = {}) {
+    // Add the actual incoming WAMessage as the native Baileys quote target.
+    // This makes both message.reply() and direct api.sendMessage()/media sends
+    // quote the message that triggered the command, not an older quoted message.
+    function sanitizeSendOptions(options = {}, targetJid = null) {
         const out = { ...options };
         delete out.reply_to_message_id;
         delete out.parse_mode;
         delete out.reply_markup;
         delete out.caption;
+
+        const current = clientInstance?._currentEvent;
+        const sameChat = targetJid && current?.type === "message"
+            && normalizeJID(current.threadID) === normalizeJID(targetJid);
+        if (!out.quoted && !out.replyToMessage && sameChat && current?.raw) {
+            out.quoted = current.raw;
+        }
+        delete out.replyToMessage;
         return out;
     }
 
@@ -664,14 +675,22 @@ function createBaileysClient(config, callback) {
                     }
                 }
                 if (mentions.length > 0) messagePayload.mentions = mentions;
-                const quoted = options.replyToMessage || options.quoted;
+                // Baileys requires { quoted: <full WAMessage> }. Prefer an explicit
+                // quote, otherwise automatically quote the current incoming message
+                // when this send is going back to the same chat.
+                let quoted = options.replyToMessage || options.quoted || null;
+                if (quoted && quoted.raw) quoted = quoted.raw;
                 const sendOptions = { ...options };
                 delete sendOptions.replyToMessage;
                 delete sendOptions.quoted;
-                // Legacy reply_to_message_id is not a full Baileys message; use the current
-                // event when available, otherwise simply send without a quote.
-                if (!quoted && sendOptions.reply_to_message_id && clientInstance?._currentEvent?.raw) {
-                    sendOptions.quoted = global.GoatBot.api._currentEvent.raw;
+                if (quoted) {
+                    sendOptions.quoted = quoted;
+                } else {
+                    const current = clientInstance?._currentEvent;
+                    if (current?.type === "message" && current.raw
+                        && normalizeJID(current.threadID) === normalizeJID(targetJid)) {
+                        sendOptions.quoted = current.raw;
+                    }
                 }
                 const sent = await socket.sendMessage(targetJid, messagePayload, sendOptions);
                 if (typeof callback === "function") {
@@ -689,7 +708,7 @@ function createBaileysClient(config, callback) {
                 const mentions = options.mentions ? options.mentions.map(m => normalizeJID(m)) : [];
                 const payload = { image: normalizeAttachment(image), caption: caption };
                 if (mentions.length > 0) payload.mentions = mentions;
-                return await socket.sendMessage(target, payload, sanitizeSendOptions(options));
+                return await socket.sendMessage(target, payload, sanitizeSendOptions(options, target));
             },
             sendPhoto: async (jid, photo, options = {}, legacyMessageID) => {
                 // Supports (jid, photo, opts, messageID), (photo, jid, opts),
@@ -712,7 +731,7 @@ function createBaileysClient(config, callback) {
                 const mentions = options.mentions ? options.mentions.map(m => normalizeJID(m)) : [];
                 const payload = { video: normalizeAttachment(video), caption: caption };
                 if (mentions.length > 0) payload.mentions = mentions;
-                return await socket.sendMessage(target, payload, sanitizeSendOptions(options));
+                return await socket.sendMessage(target, payload, sanitizeSendOptions(options, target));
             },
             sendAudio: async (audio, jid, options = {}) => {
                 if (looksLikeJID(audio) && !looksLikeJID(jid)) {
@@ -724,7 +743,7 @@ function createBaileysClient(config, callback) {
                 const payload = { audio: normalizeAttachment(audio), ptt: !!options.ptt, mimetype: options.mimetype || "audio/ogg" };
                 if (options.caption) payload.caption = options.caption;
                 if (mentions.length > 0) payload.mentions = mentions;
-                return await socket.sendMessage(target, payload, sanitizeSendOptions(options));
+                return await socket.sendMessage(target, payload, sanitizeSendOptions(options, target));
             },
             reactToMessage: async (jid, key, emoji) => {
                 return await socket.sendMessage(normalizeJID(jid), { react: { text: emoji, key: key } });
@@ -886,13 +905,9 @@ function createBaileysClient(config, callback) {
                 return await socket.sendMessage(normalizeJID(jid), { text: caption || "", edit: { remoteJid: normalizeJID(jid), id: String(messageID), fromMe: true } });
             },
             unsendMessage: async (messageID, jid) => {
-                const target = jid || ctx.currentEvent?.threadID;
+                const target = jid || ctx.currentEvent?.threadID || clientInstance._currentEvent?.threadID;
                 if (!target) throw new Error("Missing chat ID for unsendMessage");
-                const remoteJid = normalizeJID(target);
-                if (!remoteJid) throw new Error("Invalid chat ID for unsendMessage");
-                return await socket.sendMessage(remoteJid, {
-                    delete: { remoteJid, id: String(messageID), fromMe: true }
-                });
+                return await clientInstance.deleteMessage(target, { remoteJid: target, id: String(messageID), fromMe: true });
             },
             pinMessage: async (jid, messageID, duration = 24 * 60 * 60) => {
                 return await socket.sendMessage(normalizeJID(jid), { pin: { key: { remoteJid: normalizeJID(jid), id: messageID, fromMe: true }, type: 1, duration: duration } });
